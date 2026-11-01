@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#09090b">
+<title>Meme Hook Editor</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+:root {
+  --bg: #09090b;
+  --surface: #121214;
+  --surface2: #1c1c1f;
+  --border: #2a2a2e;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #22d3ee;
+  --accent-dim: #0891b2;
+  --orange: #f97316;
+  --green: #34d399;
+  --red: #f87171;
+  --radius: 14px;
+  --radius-sm: 10px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea { font-family: inherit; font-size: 15px; }
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px 20px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 12px;
+  gap: 12px;
+}
+.logo {
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+.logo span { color: var(--accent); }
+.export-btn {
+  background: var(--accent);
+  color: #042f2e;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  min-height: 42px;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.export-btn:active { transform: scale(0.96); opacity: 0.9; }
+
+#strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 16px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+#strip::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
+  min-width: 42px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.chip.on {
+  background: var(--surface2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.chip.add {
+  color: var(--accent);
+  border-color: #164e63;
+}
+
+#stage {
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+canvas {
+  width: 180px;
+  height: 320px;
+  border-radius: 12px;
+  background: #000;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  display: block;
+}
+
+#tbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+}
+#pl {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--text);
+  color: #000;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+#pl:active { transform: scale(0.94); }
+#pl .pa { display: none; }
+#pl.on .pa { display: block; }
+#pl.on .pp { display: none; }
+
+#tl {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 14px 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+#trk {
+  position: relative;
+  padding-left: 32px;
+  touch-action: none;
+  user-select: none;
+}
+#ruler {
+  height: 20px;
+  position: relative;
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+#ruler i {
+  position: absolute;
+  top: 10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateX(-50%);
+}
+#ruler span {
+  position: absolute;
+  top: -2px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.tr {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  margin-bottom: 6px;
+  position: relative;
+}
+.tr:last-child { margin-bottom: 0; }
+.tr svg {
+  position: absolute;
+  left: -28px;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+.lane {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.cl {
+  flex: 1;
+  height: 42px;
+  border-radius: 8px;
+  background: var(--surface2);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  transition: outline 0.12s ease;
+}
+.cl img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cl.x {
+  background: #9a3412;
+  color: #ffedd5;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cl.a {
+  background: #134e4a;
+  color: #ccfbf1;
+  padding: 0 8px;
+}
+.cl.emp {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+.cl.on {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+#ph {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text);
+  z-index: 5;
+  pointer-events: none;
+  will-change: left;
+}
+#ph::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+#panel {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 11px 16px;
+  border-radius: var(--radius-sm);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.btn input[type=file] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #22d3ee22, #0891b233);
+  border-color: #164e63;
+  color: var(--accent);
+}
+.btn.danger {
+  color: var(--red);
+  border-color: #7f1d1d;
+}
+.btn.ai {
+  background: linear-gradient(135deg, #f9731622, #ea580c33);
+  border-color: #9a3412;
+  color: var(--orange);
+}
+.btn.online-only[data-offline="1"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+textarea, input[type=text] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  color: var(--text);
+  resize: none;
+  transition: border-color 0.15s;
+}
+textarea:focus, input[type=text]:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+textarea {
+  min-height: 78px;
+  line-height: 1.45;
+}
+input[type=text] { min-height: 44px; }
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.assistant .log {
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.assistant .log b { color: var(--accent); }
+.assistant .log .me { color: var(--text); margin-bottom: 8px; }
+.assistant .log .ai { color: var(--green); margin-bottom: 8px; }
+
+#tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  margin-top: auto;
+}
+#tabs button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 2px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  min-height: 52px;
+  transition: background 0.15s, color 0.15s;
+}
+#tabs button.on {
+  background: var(--surface2);
+  color: var(--accent);
+}
+#tabs svg { width: 18px; height: 18px; }
+
+#ov {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+.box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px;
+  width: min(100%, 340px);
+  text-align: center;
+}
+.box video {
+  width: 100%;
+  max-height: 40dvh;
+  border-radius: 12px;
+  background: #000;
+  margin: 16px 0;
+}
+.bar {
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+  margin: 16px 0 10px;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+.box .row { justify-content: center; margin-top: 12px; }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  background: #f4f4f5;
+  color: #18181b;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  z-index: 60;
+  max-width: 90%;
+  text-align: center;
+}
+#toast.on { opacity: 1; }
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.status-dot.on { background: var(--green); }
+.status-dot.off { background: var(--red); }
+
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">Meme<span>Hook</span></div>
+    <button class="export-btn" data-act="save">Export</button>
+  </header>
+
+  <div id="strip"></div>
+
+  <section id="stage">
+    <canvas id="cv" width="720" height="1280"></canvas>
+  </section>
+
+  <div id="tbar">
+    <span id="tm">00:00 / 00:15</span>
+    <button id="pl" data-act="play" aria-label="Play">
+      <svg class="pp" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg class="pa" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
+    </button>
+    <span style="width:60px"></span>
+  </div>
+
+  <section id="tl">
+    <div id="trk">
+      <div id="ruler"></div>
+      <div class="tr">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <div class="lane" id="lv"></div>
+      </div>
+      <div class="tr">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+        <div class="lane" id="lt"></div>
+      </div>
+      <div class="tr">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <div class="lane" id="la"></div>
+      </div>
+      <div id="ph"></div>
+    </div>
+  </section>
+
+  <section id="panel"></section>
+
+  <nav id="tabs">
+    <button data-tab="clip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      Caption
+    </button>
+    <button data-tab="media">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      Media
+    </button>
+    <button data-tab="tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+      Tools
+    </button>
+    <button data-tab="audio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      Audio
+    </button>
+    <button data-tab="videos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>
+      Videos
+    </button>
+  </nav>
+</div>
+
+<div id="ov" hidden>
+  <div class="box">
+    <b id="ovt">Exporting…</b>
+    <div class="bar" id="barw"><i id="bar"></i></div>
+    <video id="pv" controls playsinline hidden></video>
+    <div id="prog" class="hint"></div>
+    <div class="row" id="ovb" hidden>
+      <button class="export-btn" data-act="dosave">Save</button>
+      <button class="btn" data-act="ovclose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* The full script is identical to the local file. 
+   Because of length limits in this tool call, please download the file from the previous message 
+   and upload it manually, or tell me to try a smaller approach. */
+console.log('Meme Hook Editor');
+</script>
+</body>
+</html>
